@@ -101,6 +101,9 @@
     display:flex; align-items:center; gap:5px;
     font-size:13px; color:var(--ink-2); cursor:pointer; white-space:nowrap; transition:background .15s ease, color .15s ease, border-color .15s ease;}
   .menu-btn svg{width:13px; height:13px;}
+  .menu-btn img.av{width:20px; height:20px; border-radius:99px; display:block;}
+  .menu-btn .av-init{width:20px; height:20px; border-radius:99px; background:var(--blue); color:#fff;
+    font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center;}
   .menu-btn:hover{background:var(--surface-2); color:var(--ink); border-color:var(--axis);}
   .menu-wrap{position:relative; display:flex; align-items:center; gap:8px;}
   .menu-pop{position:absolute; right:0; top:40px; background:var(--surface); border:1px solid var(--card-border);
@@ -290,6 +293,7 @@
       <button data-view="budget">Budget</button>
       <button data-view="goals">Goals</button>
     </nav>
+    <button class="menu-btn" id="authBtn" style="display:none">Sign in</button>
     <button class="icon-btn" id="themeBtn" title="Toggle theme"></button>
     <div class="menu-wrap">
       <button class="menu-btn" id="dataMenuBtn">Data <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
@@ -465,7 +469,7 @@
   </section>
 
   <footer class="site">
-    <p>Data is stored locally in this browser only and is never transmitted, synced, or backed up automatically. Back up regularly via <b>Data → Backup</b> to avoid loss.</p>
+    <p>Data is stored on this device and, when you sign in, synced securely to your private account — accessible only by you. Back up periodically via <b>Data → Backup</b>.</p>
     <p>This is a personal budgeting tool. It is not a bank, broker-dealer, or registered investment adviser, and nothing here constitutes investment, legal, or tax advice. Figures shown are self-reported and unverified.</p>
     <p class="copyright">© 2026 Gabriel Matos. All rights reserved.</p>
   </footer>
@@ -536,6 +540,7 @@ function load(){
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(data)); }
   catch(e){ toast('⚠ Could not save — storage blocked or full. Export a backup now.'); }
+  if(window.cloudPush) window.cloudPush();   // cloud sync hook (set by the sync module when signed in)
 }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
@@ -1254,6 +1259,125 @@ App.render();
 // PWA: offline shell. Register only on https (deployed) so local dev never serves a stale cache.
 if ('serviceWorker' in navigator && location.protocol === 'https:')
   navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* =========================================================
+   CLOUD SYNC (optional — sign in to sync across devices)
+   Everything above this line works fully offline with zero
+   network dependency. Signing in adds Firestore as a sync
+   layer on top of localStorage, which stays the source of
+   truth for offline reads/writes. If Firebase isn't configured
+   yet (placeholder below) or fails to load, this whole block
+   fails silently and the app behaves exactly as before.
+   ========================================================= */
+(async () => {
+  // Same Firebase project is shared by Gabriel Finance and Maggie Finance —
+  // identity (Google sign-in) determines whose data you see, not which site
+  // you're on. This config is safe to be public; Firestore security rules
+  // (not this key) are what actually restrict access to each signed-in user.
+  const firebaseConfig = {
+    apiKey: "REPLACE_ME",
+    authDomain: "REPLACE_ME.firebaseapp.com",
+    projectId: "REPLACE_ME",
+    storageBucket: "REPLACE_ME.appspot.com",
+    messagingSenderId: "REPLACE_ME",
+    appId: "REPLACE_ME"
+  };
+  if (firebaseConfig.apiKey === "REPLACE_ME") return; // not configured yet — stay local-only
+
+  try {
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js');
+    const { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } =
+      await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js');
+    const { getFirestore, doc, getDoc, setDoc, onSnapshot } =
+      await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js');
+
+    const fbApp = initializeApp(firebaseConfig);
+    const auth = getAuth(fbApp);
+    const dbFs = getFirestore(fbApp);
+    const provider = new GoogleAuthProvider();
+
+    let unsubSnapshot = null;
+    let applyingRemote = false;
+    let pushTimer = null;
+    const cloudRef = uid => doc(dbFs, 'financeData', uid);
+    const hasContent = d => (d.transactions||[]).length || (d.accounts||[]).length || (d.goals||[]).length;
+
+    function schedulePush(){
+      if (applyingRemote) return; // don't echo a remote update straight back to the cloud
+      const user = auth.currentUser;
+      if (!user) return;
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(() => {
+        setDoc(cloudRef(user.uid), data).catch(err => console.error('cloud sync failed', err));
+      }, 600);
+    }
+    window.cloudPush = schedulePush;
+
+    async function startSync(user){
+      if (unsubSnapshot) unsubSnapshot();
+      const ref = cloudRef(user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, data); // first sign-in on this account — seed the cloud from local
+      } else {
+        const cloud = snap.data();
+        if (hasContent(data) && hasContent(cloud)) {
+          const useCloud = await ask('Existing synced data found',
+            'This account already has data synced from another device. Use that data here, or keep what\'s on this device and overwrite the cloud copy?',
+            {okLabel:'Use cloud data'});
+          applyingRemote = true;
+          if (useCloud) { data = cloud; save(); App.render(); }
+          applyingRemote = false;
+          if (!useCloud) await setDoc(ref, data);
+        } else if (hasContent(cloud)) {
+          applyingRemote = true; data = cloud; save(); App.render(); applyingRemote = false;
+        } else if (hasContent(data)) {
+          await setDoc(ref, data);
+        }
+      }
+      unsubSnapshot = onSnapshot(ref, s => {
+        if (s.metadata.hasPendingWrites) return; // our own optimistic write echoing back
+        const remote = s.data();
+        if (!remote) return;
+        applyingRemote = true;
+        data = remote;
+        localStorage.setItem(KEY, JSON.stringify(data));
+        App.render();
+        applyingRemote = false;
+      });
+    }
+    function stopSync(){
+      if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
+      window.cloudPush = null;
+    }
+
+    function renderAuthBtn(user){
+      const btn = el('authBtn');
+      btn.style.display = '';
+      if (user) {
+        const first = (user.displayName || user.email || 'Account').split(' ')[0];
+        const initials = (user.displayName || user.email || '?').trim().split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
+        btn.innerHTML = user.photoURL
+          ? `<img class="av" src="${user.photoURL}" referrerpolicy="no-referrer" alt=""> ${esc(first)}`
+          : `<span class="av-init">${esc(initials)}</span> ${esc(first)}`;
+        btn.onclick = async () => {
+          if (await ask('Sign out', 'Sign out of sync? Your data stays on this device either way.', {okLabel:'Sign out'})) await signOut(auth);
+        };
+      } else {
+        btn.textContent = 'Sign in to sync';
+        btn.onclick = () => signInWithRedirect(auth, provider);
+      }
+    }
+
+    onAuthStateChanged(auth, user => {
+      renderAuthBtn(user);
+      if (user) startSync(user); else stopSync();
+    });
+    getRedirectResult(auth).catch(err => console.error('sign-in redirect error', err));
+  } catch (err) {
+    console.error('cloud sync unavailable', err); // app continues fully functional, local-only
+  }
+})();
 </script>
 </body>
 </html>

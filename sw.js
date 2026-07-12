@@ -15,6 +15,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // Only manage the app's own files. Firebase/Google network calls (auth, Firestore
+  // streaming) must pass through untouched — intercepting them breaks sign-in and sync.
+  if (new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
     fetch(e.request).then(res => {
       const copy = res.clone();
