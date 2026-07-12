@@ -185,7 +185,7 @@
     background:var(--surface-2); border:1px solid var(--card-border); color:var(--ink-2); white-space:nowrap;}
   .x-btn{background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px; padding:3px 8px; border-radius:var(--radius-xs);
     opacity:0; transition:background .12s ease, color .12s ease, opacity .12s ease;}
-  tr:hover .x-btn{opacity:1;}
+  tr:hover .x-btn, .goal:hover .x-btn{opacity:1;}
   .x-btn:hover{color:var(--critical); background:var(--critical-soft);}
   @media (hover:none){ .x-btn{opacity:1;} }
   .amount-neg{color:var(--ink);} .amount-pos{color:var(--good-text); font-weight:600;}
@@ -205,6 +205,19 @@
   .status-chip.over{background:var(--critical-soft); color:var(--critical);}
   .status-chip.close{background:var(--warn-soft); color:var(--warn-text);}
   @media(max-width:700px){ .b-row{grid-template-columns:1fr; gap:6px;} .b-row .nums{text-align:left;} }
+
+  /* ---------- goals ---------- */
+  .goal{padding:14px 0; border-bottom:1px solid var(--grid);}
+  .goal:last-child{border-bottom:none;}
+  .goal-head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px;}
+  .goal-head .name{font-size:14.5px; font-weight:600;}
+  .goal-head .nums{font-size:13px; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .goal-head .nums b{color:var(--ink);}
+  .goal-foot{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:7px;}
+  .goal-foot .pace{font-size:12px; color:var(--muted);}
+  .goal-foot .pace.behind{color:var(--critical);}
+  .goal-foot input{width:110px; text-align:right; padding:5px 8px; font-size:12.5px;}
+  @media(max-width:600px){ .goal-foot{flex-direction:column; align-items:flex-start; gap:8px;} }
 
   /* ---------- advisor ---------- */
   .adv{display:flex; gap:11px; padding:11px 0; border-bottom:1px solid var(--grid); align-items:flex-start;}
@@ -273,6 +286,7 @@
       <button data-view="expenses">Expenses</button>
       <button data-view="networth">Net Worth</button>
       <button data-view="budget">Budget</button>
+      <button data-view="goals">Goals</button>
     </nav>
     <button class="icon-btn" id="themeBtn" title="Toggle theme"></button>
     <div class="menu-wrap">
@@ -424,6 +438,30 @@
     </div>
   </section>
 
+  <!-- ==================== GOALS ==================== -->
+  <section class="view" id="view-goals">
+    <div class="page-head">
+      <div><h2 class="page-title">Goals</h2><div class="sub">Name what you're saving for. Progress updates as your account balances do.</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <h3>Add a goal</h3>
+      <div class="frow" style="grid-template-columns:1.4fr 130px 130px 150px auto;">
+        <div><label class="f">Name</label><input type="text" id="goal-name" placeholder="e.g. Des Moines move, Emergency fund"></div>
+        <div><label class="f">Target amount</label><input type="number" id="goal-target" step="0.01" min="0" placeholder="0.00"></div>
+        <div><label class="f">Starting amount</label><input type="number" id="goal-current" step="0.01" min="0" placeholder="0.00"></div>
+        <div><label class="f">Target date <span class="hint">(optional)</span></label><input type="date" id="goal-date"></div>
+        <button class="btn" onclick="App.addGoal()">Add</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Your goals</h3>
+      <div id="goals-list"></div>
+      <div class="empty" id="goals-empty" style="display:none">No goals yet. Add one above — a dollar target and, if you have one, a date.</div>
+    </div>
+  </section>
+
   <footer class="site">
     <div>Data is stored only in this browser. Back up regularly: <b>Data → Backup</b>.</div>
     <div>Personal tool — not investment advice.</div>
@@ -490,7 +528,7 @@ let editingId = null;
 
 function load(){
   try{ const d = JSON.parse(localStorage.getItem(KEY)); if(d && d.transactions) return d; }catch(e){}
-  return {transactions:[], accounts:[], snapshots:[], budgets:{}};
+  return {transactions:[], accounts:[], snapshots:[], budgets:{}, goals:[]};
 }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(data)); }
@@ -636,6 +674,27 @@ const App = {
     save(); this.render();
   },
 
+  /* ---------- goals ---------- */
+  addGoal(){
+    const name=el('goal-name').value.trim(), target=parseFloat(el('goal-target').value),
+          current=parseFloat(el('goal-current').value)||0, deadline=el('goal-date').value||null;
+    if(!name || !(target>0)){ toast('Need a name and a target amount.'); return; }
+    data.goals.push({id:uid(), name, target, current, deadline});
+    el('goal-name').value=''; el('goal-target').value=''; el('goal-current').value=''; el('goal-date').value='';
+    save(); this.render(); toast('Goal added.');
+  },
+  updateGoalAmount(id, val){
+    const g=data.goals.find(g=>g.id===id); if(!g) return;
+    const v=parseFloat(val); if(isNaN(v)) return;
+    g.current=v; save(); this.render();
+  },
+  async delGoal(id){
+    const g=data.goals.find(g=>g.id===id); if(!g) return;
+    if(!(await ask('Delete goal', 'Remove "'+g.name+'"? Your account balances are unaffected.', {okLabel:'Delete', danger:true}))) return;
+    data.goals = data.goals.filter(g=>g.id!==id);
+    save(); this.render();
+  },
+
   /* ---------- data management ---------- */
   exportJSON(){
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -661,7 +720,11 @@ const App = {
             assets:N(s.assets), liabilities:N(s.liabilities)}))
             .filter(s=>/^\d{4}-\d{2}-\d{2}$/.test(s.date)).sort((a,b)=>a.date<b.date?-1:1),
           budgets:Object.fromEntries(Object.entries(d.budgets||{}).filter(([k])=>EXP_CATS.includes(k))
-            .map(([k,v])=>[k,N(v)]).filter(([,v])=>v>0))
+            .map(([k,v])=>[k,N(v)]).filter(([,v])=>v>0)),
+          goals:(Array.isArray(d.goals)?d.goals:[]).map(g=>({id:S(g.id)||uid(), name:S(g.name),
+            target:Math.abs(N(g.target)), current:Math.abs(N(g.current)),
+            deadline:/^\d{4}-\d{2}-\d{2}$/.test(S(g.deadline)) ? S(g.deadline) : null}))
+            .filter(g=>g.name && g.target>0)
         };
         save(); App.render(); toast('Backup restored.');
       }catch(e){ toast('That file is not a valid backup.'); } };
@@ -678,7 +741,7 @@ const App = {
   },
   async resetAll(){
     if(!(await ask('Erase everything', 'This permanently deletes all accounts, transactions, and history from this browser. Export a backup first if you want to keep it.', {okLabel:'Erase all data', danger:true}))) return;
-    data={transactions:[],accounts:[],snapshots:[],budgets:{}}; save(); this.render(); toast('Erased.');
+    data={transactions:[],accounts:[],snapshots:[],budgets:{},goals:[]}; save(); this.render(); toast('Erased.');
   },
   async loadSample(){
     if(data.transactions.length && !(await ask('Load sample data', 'This replaces your current data with illustrative sample data.', {okLabel:'Replace'}))) return;
@@ -696,6 +759,7 @@ const App = {
     this.renderExpenses();
     this.renderNetWorth();
     this.renderBudget();
+    this.renderGoals();
   },
 
   /* ---------- dashboard ---------- */
@@ -853,6 +917,41 @@ const App = {
       : 'Set category budgets to activate the meter.';
 
     render503020(el('rule-check'), byCat, incomeInMonth(curMonth));
+  },
+
+  /* ---------- goals ---------- */
+  renderGoals(){
+    const list=el('goals-list');
+    el('goals-empty').style.display = data.goals.length ? 'none' : '';
+    list.innerHTML = data.goals.map(g=>{
+      const ratio=Math.min(g.current/g.target, 1);
+      const remaining=Math.max(g.target-g.current, 0);
+      let pace='';
+      if(g.deadline && remaining>0){
+        const months=Math.max((new Date(g.deadline)-new Date())/(1000*60*60*24*30.44), 0.1);
+        const perMonth=remaining/months;
+        pace = months<0.5
+          ? `<span class="pace behind">Target date has passed</span>`
+          : `<span class="pace${perMonth>2000?' behind':''}">Save ${fmt(perMonth,true)}/mo to hit this by ${dShort(g.deadline)}</span>`;
+      } else if(remaining===0){
+        pace = `<span class="pace" style="color:var(--good-text)">Goal reached 🎯</span>`;
+      }
+      return `<div class="goal">
+        <div class="goal-head">
+          <div class="name">${esc(g.name)}</div>
+          <div class="nums"><b>${fmt(g.current)}</b> of ${fmt(g.target)} · ${pct(ratio)}</div>
+        </div>
+        <div class="meter${ratio>=1?'':''}"><i style="width:${ratio*100}%"></i></div>
+        <div class="goal-foot">
+          ${pace || '<span class="pace">No target date set</span>'}
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="number" step="0.01" value="${g.current}" title="Update current amount"
+              onchange="App.updateGoalAmount('${g.id}', this.value)">
+            <button class="x-btn" title="Delete" onclick="App.delGoal('${g.id}')">×</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
   }
 };
 
@@ -1086,7 +1185,13 @@ function sampleData(){
   const budgets={'Housing':500,'Utilities':100,'Groceries':300,'Transportation':130,'Insurance':140,
     'Dining out':100,'Subscriptions':50,'Health':40,'Entertainment':50,'Personal':75,'Savings & investing':500};
   const past=tx.filter(t=>t.date<=today());
-  return {transactions:past.sort((a,b)=>a.date<b.date?1:-1), accounts, snapshots:snaps, budgets};
+  const goalDate=new Date(y, m+10, 1);
+  const goals=[
+    {id:uid(), name:'Emergency fund (6 months)', target:6000, current:8200, deadline:null},
+    {id:uid(), name:'Des Moines move', target:5000, current:1200,
+      deadline: goalDate.getFullYear()+'-'+String(goalDate.getMonth()+1).padStart(2,'0')+'-01'}
+  ];
+  return {transactions:past.sort((a,b)=>a.date<b.date?1:-1), accounts, snapshots:snaps, budgets, goals};
 }
 
 /* ---------- modal (replaces native confirm) ---------- */
