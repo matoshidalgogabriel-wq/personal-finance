@@ -74,11 +74,12 @@
   header.app{
     background:var(--surface);
     border-bottom:1px solid var(--card-border);
+    border-top:3px solid var(--blue);
     box-shadow:var(--shadow-xs);
     position:sticky; top:0; z-index:50;
   }
   .bar{max-width:1160px; margin:0 auto; padding:0 20px; display:flex; align-items:center; gap:18px; height:60px;}
-  .brand{font-weight:650; font-size:13px; letter-spacing:.14em; white-space:nowrap; color:var(--ink);}
+  .brand{font-family:Georgia,"Times New Roman",serif; font-weight:700; font-size:17px; letter-spacing:.01em; white-space:nowrap; color:var(--ink);}
   nav.tabs{display:flex; gap:22px; overflow-x:auto; flex:1; scrollbar-width:none; align-self:stretch;}
   nav.tabs::-webkit-scrollbar{display:none;}
   nav.tabs button{
@@ -271,16 +272,17 @@
   .modal-actions{display:flex; justify-content:flex-end; gap:8px;}
 
   /* ---------- footer ---------- */
-  footer.site{border-top:1px solid var(--grid); margin-top:36px; padding-top:16px;
-    display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
-    color:var(--muted); font-size:11.5px;}
+  footer.site{border-top:1px solid var(--grid); margin-top:36px; padding-top:18px; padding-bottom:4px;
+    color:var(--muted); font-size:11px; line-height:1.6; max-width:760px;}
+  footer.site p{margin-bottom:8px;}
+  footer.site .copyright{margin-top:14px; margin-bottom:0; color:var(--axis);}
 </style>
 </head>
 <body>
 
 <header class="app">
   <div class="bar">
-    <div class="brand">GABRIEL&nbsp;FINANCE</div>
+    <div class="brand">Gabriel Finance</div>
     <nav class="tabs" id="tabs">
       <button data-view="dash" class="on">Dashboard</button>
       <button data-view="expenses">Expenses</button>
@@ -463,8 +465,9 @@
   </section>
 
   <footer class="site">
-    <div>Data is stored only in this browser. Back up regularly: <b>Data → Backup</b>.</div>
-    <div>Personal tool — not investment advice.</div>
+    <p>Data is stored locally in this browser only and is never transmitted, synced, or backed up automatically. Back up regularly via <b>Data → Backup</b> to avoid loss.</p>
+    <p>This is a personal budgeting tool. It is not a bank, broker-dealer, or registered investment adviser, and nothing here constitutes investment, legal, or tax advice. Figures shown are self-reported and unverified.</p>
+    <p class="copyright">© 2026 Gabriel Matos. All rights reserved.</p>
   </footer>
 </main>
 
