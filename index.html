@@ -1275,14 +1275,13 @@ if ('serviceWorker' in navigator && location.protocol === 'https:')
   // you're on. This config is safe to be public; Firestore security rules
   // (not this key) are what actually restrict access to each signed-in user.
   const firebaseConfig = {
-    apiKey: "REPLACE_ME",
-    authDomain: "REPLACE_ME.firebaseapp.com",
-    projectId: "REPLACE_ME",
-    storageBucket: "REPLACE_ME.appspot.com",
-    messagingSenderId: "REPLACE_ME",
-    appId: "REPLACE_ME"
+    apiKey: "AIzaSyBI6Nk76Fukvvao8uk_90koSOwiWQMPPRU",
+    authDomain: "personalfinance-a4da5.firebaseapp.com",
+    projectId: "personalfinance-a4da5",
+    storageBucket: "personalfinance-a4da5.firebasestorage.app",
+    messagingSenderId: "472783503335",
+    appId: "1:472783503335:web:f64a08104d7df5c2584742"
   };
-  if (firebaseConfig.apiKey === "REPLACE_ME") return; // not configured yet — stay local-only
 
   try {
     const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js');
