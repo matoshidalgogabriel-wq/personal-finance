@@ -1285,7 +1285,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:')
 
   try {
     const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js');
-    const { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } =
+    const { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } =
       await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js');
     const { getFirestore, doc, getDoc, setDoc, onSnapshot } =
       await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js');
@@ -1364,7 +1364,14 @@ if ('serviceWorker' in navigator && location.protocol === 'https:')
         };
       } else {
         btn.textContent = 'Sign in to sync';
-        btn.onclick = () => signInWithRedirect(auth, provider);
+        btn.onclick = async () => {
+          try { await signInWithPopup(auth, provider); }
+          catch (err) {
+            if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request')
+              toast('Sign-in failed: ' + (err.code || err.message));
+            console.error('sign-in failed', err);
+          }
+        };
       }
     }
 
@@ -1372,7 +1379,6 @@ if ('serviceWorker' in navigator && location.protocol === 'https:')
       renderAuthBtn(user);
       if (user) startSync(user); else stopSync();
     });
-    getRedirectResult(auth).catch(err => console.error('sign-in redirect error', err));
   } catch (err) {
     console.error('cloud sync unavailable', err); // app continues fully functional, local-only
   }
