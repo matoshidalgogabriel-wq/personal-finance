@@ -1203,6 +1203,20 @@ function sampleData(){
 }
 
 /* ---------- modal (replaces native confirm) ---------- */
+function alertModal(title, body){
+  return new Promise(res=>{
+    const m=el('modal'), ok=el('modal-ok'), cancel=el('modal-cancel');
+    el('modal-title').textContent=title;
+    el('modal-body').textContent=body;
+    ok.textContent='OK'; ok.classList.remove('danger-btn');
+    cancel.style.display='none';
+    m.hidden=false; ok.focus();
+    const done=()=>{ m.hidden=true; cancel.style.display=''; ok.onclick=m.onclick=document.onkeydown=null; res(); };
+    ok.onclick=done;
+    m.onclick=e=>{ if(e.target===m) done(); };
+    document.onkeydown=e=>{ if(e.key==='Escape') done(); };
+  });
+}
 function ask(title, body, opts={}){
   return new Promise(res=>{
     const m=el('modal'), ok=el('modal-ok'), cancel=el('modal-cancel');
@@ -1365,11 +1379,14 @@ if ('serviceWorker' in navigator && location.protocol === 'https:')
       } else {
         btn.textContent = 'Sign in to sync';
         btn.onclick = async () => {
-          try { await signInWithPopup(auth, provider); }
+          try {
+            const result = await signInWithPopup(auth, provider);
+            await alertModal('Signed in', 'Signed in as ' + (result.user.displayName || result.user.email) + '. Sync is now active on this device.');
+          }
           catch (err) {
-            if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request')
-              toast('Sign-in failed: ' + (err.code || err.message));
             console.error('sign-in failed', err);
+            if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request')
+              await alertModal('Sign-in failed', 'Error code: ' + (err.code || 'unknown') + '\n' + (err.message || ''));
           }
         };
       }
