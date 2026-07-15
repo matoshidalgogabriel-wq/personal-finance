@@ -188,6 +188,7 @@
   tr.rowbtn{cursor:pointer; transition:background .12s ease;} tr.rowbtn:hover td{background:var(--surface-2);}
   .pill{display:inline-block; padding:2.5px 10px; border-radius:99px; font-size:11.5px;
     background:var(--surface-2); border:1px solid var(--card-border); color:var(--ink-2); white-space:nowrap;}
+  .pill.uncategorized{background:var(--warn-soft); border-color:transparent; color:var(--warn-text); font-weight:600;}
   .x-btn{background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px; padding:3px 8px; border-radius:var(--radius-xs);
     opacity:0; transition:background .12s ease, color .12s ease, opacity .12s ease;}
   tr:hover .x-btn, .goal:hover .x-btn{opacity:1;}
@@ -344,12 +345,15 @@
 
     <div class="card" style="margin-bottom:14px;">
       <h3 id="tx-form-title">Add transaction</h3>
-      <div class="frow" style="grid-template-columns:110px 1fr 170px 130px 110px auto auto;">
+      <div class="sub" style="margin-top:-6px; margin-bottom:12px;">Reconciling against a statement? Leave category as "Uncategorized" and rip through every line — assign categories in one batch pass afterward.</div>
+      <div class="frow" style="grid-template-columns:110px 1fr 170px 130px 110px 84px auto auto;">
         <div><label class="f">Date</label><input type="date" id="tx-date"></div>
         <div><label class="f">Description</label><input type="text" id="tx-desc" placeholder="e.g. Hy-Vee groceries"></div>
-        <div><label class="f">Category</label><select id="tx-cat"></select></div>
+        <div><label class="f">Category <span class="hint">(optional)</span></label><select id="tx-cat"></select></div>
         <div><label class="f">Amount</label><input type="number" id="tx-amt" step="0.01" min="0" placeholder="0.00"></div>
         <div><label class="f">Type</label><select id="tx-type"><option value="expense">Expense</option><option value="income">Income</option></select></div>
+        <div><label class="f" title="Matches your bank/card statement">Reconciled</label>
+          <input type="checkbox" id="tx-reconciled" checked style="width:20px; height:20px; accent-color:var(--blue); margin-top:6px;"></div>
         <button class="btn" id="tx-save" onclick="App.saveTx()">Add</button>
         <button class="btn ghost" id="tx-cancel" style="display:none" onclick="App.cancelEdit()">Cancel</button>
       </div>
@@ -364,7 +368,7 @@
         </div>
         <div style="max-height:520px; overflow-y:auto;">
           <table>
-            <thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th><th></th></tr></thead>
+            <thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th><th class="num" title="Reconciled">✓</th><th></th></tr></thead>
             <tbody id="tx-body"></tbody>
           </table>
         </div>
@@ -376,6 +380,7 @@
             <div class="tile"><div class="label">Spent</div><div class="value" id="exp-spent">—</div></div>
             <div class="tile"><div class="label">Income</div><div class="value" id="exp-income">—</div></div>
           </div>
+          <div class="sub mt" id="exp-recon-stats"></div>
         </div>
         <div class="card">
           <h3>Spending by category</h3>
@@ -626,15 +631,16 @@ const App = {
   /* ---------- transactions ---------- */
   saveTx(){
     const date=el('tx-date').value, desc=el('tx-desc').value.trim(),
-          cat=el('tx-cat').value, amt=parseFloat(el('tx-amt').value), type=el('tx-type').value;
+          cat=el('tx-cat').value, amt=parseFloat(el('tx-amt').value), type=el('tx-type').value,
+          reconciled=el('tx-reconciled').checked;
     if(!date || !desc || !(amt>0)){ toast('Need a date, description, and amount.'); return; }
     if(editingId){
       const t=data.transactions.find(t=>t.id===editingId);
-      Object.assign(t,{date,desc,cat,amount:amt,type});
+      Object.assign(t,{date,desc,cat,amount:amt,type,reconciled});
       this.cancelEdit();
     }else{
-      data.transactions.push({id:uid(), date, desc, cat, amount:amt, type});
-      el('tx-desc').value=''; el('tx-amt').value='';
+      data.transactions.push({id:uid(), date, desc, cat, amount:amt, type, reconciled});
+      el('tx-desc').value=''; el('tx-amt').value=''; el('tx-reconciled').checked=true;
     }
     data.transactions.sort((a,b)=>a.date<b.date?1:-1);
     curMonth = ymOf(date);
@@ -645,6 +651,7 @@ const App = {
     editingId=id;
     el('tx-date').value=t.date; el('tx-desc').value=t.desc; el('tx-amt').value=t.amount;
     el('tx-type').value=t.type; this.fillCatSelect(t.type); el('tx-cat').value=t.cat;
+    el('tx-reconciled').checked=!!t.reconciled;
     el('tx-form-title').textContent='Edit transaction';
     el('tx-save').textContent='Save'; el('tx-cancel').style.display='';
     window.scrollTo({top:0, behavior:'smooth'});
@@ -653,7 +660,7 @@ const App = {
     editingId=null;
     el('tx-form-title').textContent='Add transaction';
     el('tx-save').textContent='Add'; el('tx-cancel').style.display='none';
-    el('tx-desc').value=''; el('tx-amt').value='';
+    el('tx-desc').value=''; el('tx-amt').value=''; el('tx-reconciled').checked=true;
   },
   delTx(id, ev){
     ev.stopPropagation();
@@ -661,9 +668,15 @@ const App = {
     if(editingId===id) this.cancelEdit();
     save(); this.render();
   },
+  toggleReconciled(id, ev){
+    ev.stopPropagation();
+    const t=data.transactions.find(t=>t.id===id); if(!t) return;
+    t.reconciled = !t.reconciled;
+    save(); this.render();
+  },
   fillCatSelect(type){
     const sel=el('tx-cat');
-    sel.innerHTML = CATS[type].map(c=>`<option>${c[0]}</option>`).join('');
+    sel.innerHTML = '<option value="">Uncategorized</option>' + CATS[type].map(c=>`<option>${c[0]}</option>`).join('');
   },
 
   /* ---------- accounts ---------- */
@@ -737,7 +750,7 @@ const App = {
         const S=v=>String(v==null?'':v).slice(0,200), N=v=>{const n=parseFloat(v); return isNaN(n)?0:n;};
         data={
           transactions:d.transactions.map(t=>({id:S(t.id)||uid(), date:S(t.date).slice(0,10), desc:S(t.desc),
-            cat:S(t.cat), amount:Math.abs(N(t.amount)), type:t.type==='income'?'income':'expense'}))
+            cat:S(t.cat), amount:Math.abs(N(t.amount)), type:t.type==='income'?'income':'expense', reconciled:!!t.reconciled}))
             .filter(t=>/^\d{4}-\d{2}-\d{2}$/.test(t.date) && t.amount>0),
           accounts:(d.accounts||[]).map(a=>({id:S(a.id)||uid(), name:S(a.name), type:a.type==='liability'?'liability':'asset',
             cls:S(a.cls), balance:N(a.balance)})).filter(a=>a.name),
@@ -756,11 +769,11 @@ const App = {
     r.readAsText(f); input.value='';
   },
   exportCSV(){
-    const rows=[['Date','Description','Category','Type','Amount']];
+    const rows=[['Date','Description','Category','Type','Amount','Reconciled']];
     // guard against CSV formula injection when opened in Excel
     const safe=c=>/^[=+\-@]/.test(c)?"'"+c:c;
     data.transactions.slice().sort((a,b)=>a.date<b.date?-1:1)
-      .forEach(t=>rows.push([t.date,safe(t.desc).replace(/"/g,'""'),safe(t.cat),t.type,t.amount.toFixed(2)]));
+      .forEach(t=>rows.push([t.date,safe(t.desc).replace(/"/g,'""'),safe(t.cat||'Uncategorized'),t.type,t.amount.toFixed(2),t.reconciled?'Yes':'No']));
     const csv=rows.map(r=>r.map(c=>/[",\n]/.test(c)?'"'+c+'"':c).join(',')).join('\n');
     dl(new Blob([csv],{type:'text/csv'}), 'transactions-'+today()+'.csv'); toast('CSV downloaded.');
   },
@@ -851,11 +864,13 @@ const App = {
     if(!el('tx-date').value) el('tx-date').value=today();
     const filterSel=el('tx-filter-cat');
     if(!filterSel.options.length)
-      filterSel.innerHTML='<option value="">All categories</option>'+[...EXP_CATS, ...CATS.income.map(c=>c[0])].map(c=>`<option>${c}</option>`).join('');
+      filterSel.innerHTML='<option value="">All categories</option><option value="__uncat__">Uncategorized</option>'
+        +[...EXP_CATS, ...CATS.income.map(c=>c[0])].map(c=>`<option>${c}</option>`).join('');
 
     const q=el('tx-search').value.toLowerCase(), fc=filterSel.value;
-    const list=txInMonth(curMonth)
-      .filter(t=>!fc || t.cat===fc)
+    const monthList = txInMonth(curMonth);
+    const list=monthList
+      .filter(t=>!fc || (fc==='__uncat__' ? !t.cat : t.cat===fc))
       .filter(t=>!q || t.desc.toLowerCase().includes(q) || t.cat.toLowerCase().includes(q));
 
     el('tx-count').textContent = '— '+list.length+' in '+ymLabel(curMonth);
@@ -863,14 +878,22 @@ const App = {
       <tr class="rowbtn" onclick="App.editTx('${t.id}')">
         <td style="white-space:nowrap; color:var(--ink-2)">${dShort(t.date)}</td>
         <td>${esc(t.desc)}</td>
-        <td><span class="pill">${esc(t.cat)}</span></td>
+        <td>${t.cat ? `<span class="pill">${esc(t.cat)}</span>` : `<span class="pill uncategorized">Uncategorized</span>`}</td>
         <td class="num ${t.type==='income'?'amount-pos':'amount-neg'}">${t.type==='income'?'+':''}${fmt(t.amount,true)}</td>
+        <td class="num"><input type="checkbox" ${t.reconciled?'checked':''} title="Reconciled" style="width:19px; height:19px; accent-color:var(--blue); vertical-align:middle;" onclick="App.toggleReconciled('${t.id}',event)"></td>
         <td><button class="x-btn" title="Delete" onclick="App.delTx('${t.id}',event)">×</button></td>
       </tr>`).join('')
-      : '<tr><td colspan="5" class="empty">No transactions this month yet.</td></tr>';
+      : '<tr><td colspan="6" class="empty">No transactions this month yet.</td></tr>';
 
     el('exp-spent').textContent = fmt(spentInMonth(curMonth));
     el('exp-income').textContent = fmt(incomeInMonth(curMonth));
+    if(monthList.length){
+      const reconciledCount = monthList.filter(t=>t.reconciled).length;
+      const uncatCount = monthList.filter(t=>!t.cat).length;
+      el('exp-recon-stats').textContent = `${reconciledCount} of ${monthList.length} reconciled` + (uncatCount ? ` · ${uncatCount} uncategorized` : '');
+    } else {
+      el('exp-recon-stats').textContent = '';
+    }
     drawCategoryBars(el('cat-chart'), spendByCat(curMonth));
   },
 
@@ -1113,7 +1136,7 @@ function drawCategoryBars(root, byCat){
   root.innerHTML=entries.map(([cat,v],i)=>{
     const w=Math.max(v/max*100,2);
     return `<div class="cat-bar" data-i="${i}" style="display:grid; grid-template-columns:110px 1fr 62px; gap:10px; align-items:center; padding:5px 0;">
-      <div style="font-size:12.5px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(cat)}</div>
+      <div style="font-size:12.5px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(cat||'Uncategorized')}</div>
       <div><div style="height:16px; width:${w}%; background:var(--blue); border-radius:0 4px 4px 0; min-width:3px;"></div></div>
       <div style="font-size:12px; text-align:right; font-variant-numeric:tabular-nums; color:var(--ink);">${fmt(v)}</div>
     </div>`;
@@ -1121,7 +1144,7 @@ function drawCategoryBars(root, byCat){
   root.onmousemove=ev=>{
     const row=ev.target.closest('.cat-bar'); if(!row){hideTip();return;}
     const [cat,v]=entries[+row.dataset.i];
-    showTip(`<div class="tt-title">${esc(cat)}</div><b>${fmt(v,true)}</b>`, ev.clientX, ev.clientY);
+    showTip(`<div class="tt-title">${esc(cat||'Uncategorized')}</div><b>${fmt(v,true)}</b>`, ev.clientX, ev.clientY);
   };
   root.onmouseleave=hideTip;
 }
@@ -1174,7 +1197,7 @@ function sampleData(){
   const now=new Date(); const y=now.getFullYear(), m=now.getMonth();
   const d=(mo,dd)=>{ const x=new Date(y, m+mo, dd); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); };
   const tx=[];
-  const add=(mo,dd,desc,cat,amt,type)=>tx.push({id:uid(),date:d(mo,dd),desc,cat,amount:amt,type:type||'expense'});
+  const add=(mo,dd,desc,cat,amt,type)=>tx.push({id:uid(),date:d(mo,dd),desc,cat,amount:amt,type:type||'expense',reconciled:true});
   for(let mo=-2;mo<=0;mo++){
     add(mo,5,'Paycheck','Paycheck',2058,'income'); add(mo,19,'Paycheck','Paycheck',2058,'income');
     add(mo,1,'Rent (split with roommate)','Housing',475);
